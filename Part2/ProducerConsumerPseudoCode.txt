@@ -1,0 +1,52 @@
+
+Shared data:
+
+  buffer: array of size N
+  in: index for the next item to be inserted
+  out: index for the next item to be removed
+  num: number of items
+
+Synchronization variables:
+  (initialized before Producer and Consumer starts to run)
+  mutex: pthreads_mutex_t
+  empty: pthreads_cond_t
+  full: pthreads_cond_t
+
+Producer: produces an item and puts it into the buffer
+
+  pthreads_mutex_lock(&mutex);
+
+  while (num == N) {
+     pthreads_cond_wait(&full, &mutex);
+  } 
+
+  buffer[in]=item
+  in = (in + 1) % N // circular buffer
+  num++;
+ 
+  if (num == 1)
+     pthreads_cond_broadcast(&empty);
+
+  pthreads_mutex_unlock(&mutex);  
+
+
+Consumer: removes an item from the buffer
+
+  pthreads_mutex_lock(&mutex);
+
+  while (num == 0) {
+    pthreads_cond_wait(&empty, &mutex);
+  }
+
+  item = buffer[out];
+  out = (out + 1) % N;
+  num--;
+
+  if (num == N -1)
+     pthreads_cond_broadcast(&full);
+
+  pthreads_mutex_unlock(&mutex);
+  
+  
+ 
+

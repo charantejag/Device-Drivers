@@ -1,0 +1,133 @@
+1) Acquiring sem1 before updating the device mode
+In open() part of the code, we are using sem1 to protect the multiple modifications on mode. 
+Whenever the mode is being modified it should be protected by sem1. 
+this is a critical region
+
+for mode1 critical region is protected by sem2 so that only one process/thread can be open.
+if not for this sem2 multiple threads/processes tries to open all at once.
+ 
+Open:
+
+down_interruptible(&devc->sem1);
+if (devc->mode == MODE1) {
+        devc->count1++;
+        up(&devc->sem1);
+        down_interruptible(&devc->sem2);
+         pr_info("Device opened in Mode 1 count 1 = %d \n",devc->count1);
+        return 0;
+    }
+	
+for mode1 and mode2 , the count incrementing is protected by sem1 .
+if not for this sem1 multiple threads/processes might try to increment the count all at once ,
+this might lead lead to race conditon.
+
+
+down_interruptible(&devc->sem1);
+    if (devc->mode == MODE1) {
+        devc->count1++;
+        up(&devc->sem1);
+        down_interruptible(&devc->sem2);
+        return 0;
+    }
+    else if (devc->mode == MODE2) {
+        devc->count2++;
+    }
+    up(&devc->sem1);
+    return 0;
+	
+	
+2)
+
+In ioct() part of the code, we are using sem1 to protect the multiple modifications on mode. 
+Whenever the mode is being modified it should be protected by sem1. 
+this is a critical region
+
+
+for mode1 and mode2 , the mode modification is protected by sem1 .
+if not for this sem1 multiple threads/processes might try to change the 'mode' all at once ,
+this might lead lead to race conditon.
+
+
+ioctl:
+
+down_interruptible(&(devc->sem1));
+				if (devc->mode == MODE2) {
+					up(&devc->sem1);
+					break;
+				}
+				if (devc->count1 > 1) {
+					while (devc->count1 > 1) {
+						up(&devc->sem1);
+					    wait_event_interruptible(devc->queue1, (devc->count1 == 1));
+						down_interruptible(&devc->sem1);
+					}
+				}
+				devc->mode = MODE2;
+            				devc->count1--;
+              				devc->count2++;
+				up(&devc->sem2);
+up(&devc->sem1);
+
+3)Read/write
+
+Read and write functions are used to read and write correspondingly from the device.  
+data will be accessed in the buffer using a pointer f_pos. 
+semaphore sem1 is used for protection from concurrent accessing of data in the buffer by multiple threads
+without sem1 there might lead to concurrent accessing of threads and eventually lead to race conditions
+
+Critical section :
+
+
+down_interruptible(&devc->sem1);
+	if (devc->mode == MODE1) {
+	   up(&devc->sem1);
+           if (*f_pos + count > ramdisk_size) {
+              printk("Trying to read past end of buffer!\n");
+              return ret;
+           }
+	   ret = count - copy_to_user(buf, devc->ramdisk, count);
+	}
+	else {
+          if (*f_pos + count > ramdisk_size) {
+             printk("Trying to read past end of buffer!\n");
+             up(&devc->sem1);
+             return ret;
+          }
+          ret = count - copy_to_user(buf, devc->ramdisk, count);
+	  up(&devc->sem1);
+	  
+	  
+Note:
+Whenever a read/write is succesful, the file offset position should be updated, but its not being done in this case. This leads to a race condition. 
+*ppos += nbytes; //This should be added in the read and write functions .
+
+4)
+In release() part of the code, we are using sem1 to protect the multiple modifications on mode. 
+ 
+
+	
+for mode1 and mode2 , the count updating is protected by sem1 .
+if not for this sem1 multiple threads/processes might try to update the count all at once ,
+this might lead lead to race conditon.
+
+this is a critical region
+
+down_interruptible(&devc->sem1);
+    if (devc->mode == MODE1) {
+        devc->count1++;
+        up(&devc->sem1);
+        down_interruptible(&devc->sem2);
+        return 0;
+    }
+    else if (devc->mode == MODE2) {
+        devc->count2++;
+    }
+    up(&devc->sem1);
+    return 0;
+
+
+
+
+
+
+
